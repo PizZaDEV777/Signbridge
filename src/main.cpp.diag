@@ -1,0 +1,48 @@
+#include <Arduino.h>
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(A0, INPUT_PULLUP);
+  pinMode(A1, INPUT_PULLUP);
+  pinMode(A2, INPUT_PULLUP);
+  pinMode(A3, INPUT_PULLUP);
+  pinMode(2, INPUT_PULLUP);
+  delay(500);
+  Serial.println(F("DIAGNOSTIC_READY"));
+}
+
+uint16_t measure_d2() {
+  // Charge pin 2
+  pinMode(2, OUTPUT);
+  digitalWrite(2, HIGH);
+  delayMicroseconds(50);
+  pinMode(2, INPUT);
+  
+  uint16_t count = 0;
+  while ((PIND & (1 << PD2)) && count < 2000) {
+    count++;
+  }
+  pinMode(2, INPUT_PULLUP); // restore pullup
+  return count;
+}
+
+void loop() {
+  analogRead(A0); delayMicroseconds(40);
+  uint16_t a0 = analogRead(A0);
+  analogRead(A1); delayMicroseconds(40);
+  uint16_t a1 = analogRead(A1);
+  analogRead(A2); delayMicroseconds(40);
+  uint16_t a2 = analogRead(A2);
+  analogRead(A3); delayMicroseconds(40);
+  uint16_t a3 = analogRead(A3);
+  uint8_t d2_state = digitalRead(2);
+  uint16_t d2_rc = measure_d2();
+  
+  Serial.print(F("A0:")); Serial.print(a0);
+  Serial.print(F(" A1:")); Serial.print(a1);
+  Serial.print(F(" A2:")); Serial.print(a2);
+  Serial.print(F(" A3:")); Serial.print(a3);
+  Serial.print(F(" D2:")); Serial.print(d2_state);
+  Serial.print(F(" RC2:")); Serial.println(d2_rc);
+  delay(120);
+}
