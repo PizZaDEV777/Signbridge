@@ -1,8 +1,12 @@
+#define ENABLE_OLED 0 // Set to 1 when a replacement 0.96" OLED (0x3C) is connected
+
 #include <SoftwareSerial.h>
 #include <Arduino.h>
 #include <Wire.h>
+#if ENABLE_OLED
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#endif
 // ---==========================
 // SIGNBRIDGE - 5 FLEX SENSORS + LIGHTWEIGHT MPU6050 + OLED DASHBOARD
 // ---==========================
@@ -68,10 +72,12 @@ void playVoiceTrack(uint8_t track) {
   dfplayer_send_cmd(0x12, track); // /MP3/ folder command 0x12
 }
 // ---------------------- DISPLAY CONFIGURATION --------------------------------
+#if ENABLE_OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 100000UL, 100000UL);
+#endif
 bool displayAvailable = false;
 // ---------------------- MPU6050 CONFIGURATION --------------------------------
 uint8_t mpuAddress = 0x68;
@@ -180,7 +186,9 @@ void runAutoCalibration();
 void calibrateFlatBaseline();
 void recoverI2CBus();
 void scanI2C();
+#if ENABLE_OLED
 void refreshOLED(uint8_t colOffset = 2);
+#endif
 uint8_t oledColOffset = 2; // 2 for SH1106 (centered in 132-col RAM), 0 for SSD1306
 void playStartupVoiceTest();
 // ---==========================
@@ -196,6 +204,7 @@ void playStartupVoiceTest() {
     Serial.print(i);
     Serial.print(F(" of 7: "));
 
+#if ENABLE_OLED
     if (displayAvailable) {
       display.clearDisplay();
       display.setTextSize(1);
@@ -210,44 +219,56 @@ void playStartupVoiceTest() {
       display.setTextSize(2);
       display.setCursor(4, 38);
     }
+#endif
 
     switch (i) {
       case 1:
         Serial.println(F("'Help' (0001.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("HELP!"));
+#endif
         break;
       case 2:
         Serial.println(F("'Water' (0002.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("WATER"));
+#endif
         break;
       case 3:
         Serial.println(F("'I'm okay' (0003.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("I'M OKAY"));
+#endif
         break;
       case 4:
         Serial.println(F("'Thank you' (0004.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("THANK YOU"));
+#endif
         break;
       case 5:
         Serial.println(F("'Doctor' (0005.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("DOCTOR!"));
+#endif
         break;
       case 6:
         Serial.println(F("'Peace' (0006.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("PEACE"));
+#endif
         break;
       case 7:
         Serial.println(F("'Love' (0007.mp3)"));
+#if ENABLE_OLED
         if (displayAvailable) display.println(F("LOVE"));
+#endif
         break;
     }
 
+#if ENABLE_OLED
     if (displayAvailable) refreshOLED(oledColOffset);
-  static unsigned long lastDbg = 0;
-  if (millis() - lastDbg > 2000) {
-    lastDbg = millis();
-    Serial.println(F("[OLED] Frame drawn to 0x3C [OK]"));
-  }
+#endif
 
     playVoiceTrack(i);
     delay(2100); // Allow track to play fully
@@ -263,10 +284,12 @@ void sendOledRecoveryCommands() {
   // Empty: Standard Adafruit_SSD1306 handles hardware configuration cleanly
 }
 
+#if ENABLE_OLED
 void refreshOLED(uint8_t colOffset) {
   if (!displayAvailable) return;
   display.display();
 }
+#endif
 // ---==========================
 // I2C HARDWARE BUS RECOVERY (Flushes locked slaves & resets TWI hardware)
 // ---==========================
@@ -342,6 +365,7 @@ void calibrateFlatBaseline() {
   Serial.println(F("---"));
 
   for (int c = 3; c > 0; c--) {
+#if ENABLE_OLED
     if (displayAvailable) {
       display.clearDisplay();
       display.setTextSize(1);
@@ -356,10 +380,12 @@ void calibrateFlatBaseline() {
       display.print(c);
       refreshOLED(oledColOffset);
     }
+#endif
     Serial.print(F("  Calibrating flat in ")); Serial.print(c); Serial.println(F("..."));
     delay(1000);
   }
 
+#if ENABLE_OLED
   if (displayAvailable) {
     display.clearDisplay();
     display.setTextSize(1);
@@ -371,6 +397,7 @@ void calibrateFlatBaseline() {
     display.println(F("SAMPLING NOW!"));
     refreshOLED(oledColOffset);
   }
+#endif
   delay(150);
 
   for (uint8_t i = 0; i < NUM_FLEX; i++) {
@@ -399,6 +426,9 @@ void calibrateFlatBaseline() {
       }
     }
     flexSensors[i].baseline = sBuf[12]; // Median: true resting center!
+    if (!IS_ANALOG[i] && flexSensors[i].baseline > 15) {
+      flexSensors[i].baseline = 10; // Guard D2 against stray RC spike during flat boot calibration
+    }
     flexSensors[i].raw = flexSensors[i].baseline;
     flexSensors[i].bendPercent = 0;
     flexSensors[i].isBent = false;
@@ -466,9 +496,11 @@ void setup() {
   Serial.println(F("--- SENSOR CONTINUITY & CONNECTION CHECK ---"));
   uint16_t a1_val = analogRead(A1);
   Serial.print(F("  Pin A1 (Index): Raw ADC = ")); Serial.print(a1_val);
-  Serial.println(F(" [CONNECTED]"));
+  if (a1_val >= 1018) Serial.println(F(" [OPEN / CHECK INDEX WIRE!]"));
+  else Serial.println(F(" [CONNECTED]"));
   Serial.println(F("--------------------------------------------"));
 
+#if ENABLE_OLED
   // 2. Initialize OLED Display (0x3C)
   Serial.print(F("[*] Initializing OLED Display (0x3C)... "));
   Wire.beginTransmission(0x3C);
@@ -498,6 +530,10 @@ void setup() {
     Serial.print(oledErr);
     Serial.println(F(") -> Check OLED VCC, GND, SDA(A4), SCL(A5) wires!"));
   }
+#else
+  displayAvailable = false;
+  Serial.println(F("[*] OLED disabled (ENABLE_OLED=0) - Flex + MPU6050 + Audio Mode"));
+#endif
 
   // 4. Initialize MPU6050 IMU (0x68 / 0x69)
   Serial.print(F("[*] Initializing MPU6050 IMU... "));
@@ -576,7 +612,7 @@ void readFlexSensors() {
 
       flexSensors[i].raw = ((uint32_t)flexSensors[i].raw * 3 + reading) / 4;
 
-      // Bidirectional deflection tracking: bends that drop ADC or rise ADC both register
+      // Track bend deflection from resting flat baseline:
       int16_t delta = (int16_t)reading - (int16_t)flexSensors[i].baseline;
       diffs[i] = abs(delta);
     } else {
@@ -593,8 +629,12 @@ void readFlexSensors() {
   }
 
   // PASS 2: Progressive scaling with per-finger deadband & full-scale span
-  static const uint16_t ANALOG_DEADBAND[4] = {32, 14, 48, 65};    // T, I, M, R noise rejection
-  static const uint16_t ANALOG_SPANMAX[4]  = {150, 50, 240, 350}; // T, I, M, R real bend spans
+  static const uint16_t ANALOG_DEADBAND[4] = {35, 25, 35, 35};     // T, I, M, R noise rejection
+  static const uint16_t ANALOG_SPANMAX[4]  = {150, 75, 150, 150}; // T, I, M, R real bend spans
+  static uint8_t analogReleaseCnt[4] = {0, 0, 0, 0};
+  static uint8_t pinkyEngageCnt = 0;
+  static uint8_t pinkyReleaseCnt = 0;
+
   for (uint8_t i = 0; i < NUM_FLEX; i++) {
     if (IS_ANALOG[i]) {
       const uint16_t deadband = ANALOG_DEADBAND[i];
@@ -606,25 +646,35 @@ void readFlexSensors() {
         targetPct = map(constrain(diffs[i], deadband, spanMax), deadband, spanMax, 0, 100);
       }
 
-      // Smooth moving average: snappy 60/40 response
-      if (targetPct > 0) {
+      // Smooth moving average: snappy 60/40 rise, smooth 65/35 fall
+      if (targetPct >= flexSensors[i].bendPercent) {
         flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 60 + (uint16_t)targetPct * 40) / 100;
       } else {
-        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 40) / 100;
+        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 65 + (uint16_t)targetPct * 35) / 100;
       }
 
       if (flexSensors[i].bendPercent <= zeroClamp) {
         flexSensors[i].bendPercent = 0;
       }
 
-      if (flexSensors[i].bendPercent > 25) {
+      if (flexSensors[i].bendPercent >= 40) {
         flexSensors[i].isBent = true;
-      } else if (flexSensors[i].bendPercent < 12) {
-        flexSensors[i].isBent = false;
+        analogReleaseCnt[i] = 0;
+      } else if (flexSensors[i].bendPercent <= 18) {
+        if (flexSensors[i].isBent) {
+          if (++analogReleaseCnt[i] >= 3) { // ~60ms release debounce against micro-dips
+            flexSensors[i].isBent = false;
+            analogReleaseCnt[i] = 0;
+          }
+        } else {
+          analogReleaseCnt[i] = 0;
+        }
+      } else {
+        analogReleaseCnt[i] = 0;
       }
 
     } else {
-      // Digital Pin 2 (Pinky): RC discharge from ~1 (flat) upward on bend
+      // Digital Pin 2 (Pinky): RC discharge with spike-rejecting engage debounce
       const uint8_t rcDeadband = 4;    // Rejects idle 0..4 jitter while showing gentle curls
       const uint16_t rcSpan = 45;      // Scales smooth curl & full curl cleanly 0-100%
       const uint8_t zeroClamp = 4;
@@ -634,20 +684,33 @@ void readFlexSensors() {
         rcPct = map(constrain(diffs[i], rcDeadband, rcSpan), rcDeadband, rcSpan, 0, 100);
       }
 
-      if (rcPct > 0) {
+      // Balanced rise/fall so isolated rest spikes decay quickly instead of locking Pinky BENT
+      if (rcPct >= flexSensors[i].bendPercent) {
         flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 60 + (uint16_t)rcPct * 40) / 100;
       } else {
-        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 40) / 100;
+        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 55 + (uint16_t)rcPct * 45) / 100;
       }
 
       if (flexSensors[i].bendPercent <= zeroClamp) {
         flexSensors[i].bendPercent = 0;
       }
 
-      if (flexSensors[i].bendPercent > 25) {
-        flexSensors[i].isBent = true;
-      } else if (flexSensors[i].bendPercent < 12) {
-        flexSensors[i].isBent = false;
+      // Require 4 consecutive bent reads (~100ms sustained curl) to engage; 3 flat reads to release
+      if (flexSensors[i].bendPercent >= 40) {
+        pinkyReleaseCnt = 0;
+        if (!flexSensors[i].isBent && ++pinkyEngageCnt >= 4) {
+          flexSensors[i].isBent = true;
+          pinkyEngageCnt = 4;
+        }
+      } else if (flexSensors[i].bendPercent <= 18) {
+        pinkyEngageCnt = 0;
+        if (flexSensors[i].isBent && ++pinkyReleaseCnt >= 3) {
+          flexSensors[i].isBent = false;
+          pinkyReleaseCnt = 0;
+        }
+      } else {
+        pinkyEngageCnt = 0;
+        pinkyReleaseCnt = 0;
       }
     }
   }
@@ -783,11 +846,11 @@ void readMPU6050() {
 
     motion.gyroEnergy   = sqrt(motion.gx * motion.gx + motion.gy * motion.gy + motion.gz * motion.gz);
 
-    if (motion.dynamicAccel > 3.8f || motion.gyroEnergy > 120.0f) {
+    if (motion.dynamicAccel > 6.0f || motion.gyroEnergy > 200.0f) {
 
       motion.isMoving = true;
 
-    } else if (motion.dynamicAccel < 1.2f && motion.gyroEnergy < 40.0f) {
+    } else if (motion.dynamicAccel < 1.5f && motion.gyroEnergy < 50.0f) {
 
       motion.isMoving = false;
 
@@ -839,50 +902,49 @@ void classifyOrientation() {
 // ---==========================
 void detectGesture() {
 
-  // Dynamic bend detection
-  bool thumb = (flexSensors[0].bendPercent >= 20);
-  bool index = (flexSensors[1].bendPercent >= 20);
-  bool mid   = (flexSensors[2].bendPercent >= 20);
-  bool ring  = (flexSensors[3].bendPercent >= 20);
-  bool pinky = (flexSensors[4].bendPercent >= 20);
-
-  uint8_t curledCount = (thumb ? 1 : 0) + (index ? 1 : 0) + (mid ? 1 : 0) + (ring ? 1 : 0) + (pinky ? 1 : 0);
+  // Debounced per-finger bent states (ON >= 40%, OFF <= 18% from readFlexSensors)
+  bool thumb = flexSensors[0].isBent;
+  bool index = flexSensors[1].isBent;
+  bool mid   = flexSensors[2].isBent;
+  bool ring  = flexSensors[3].isBent;
+  bool pinky = flexSensors[4].isBent;
 
   GestureId candidate = GESTURE_NONE;
 
-  // 1. EMERGENCY VIGOROUS SHAKE / WAVE -> DOCTOR!
+  // Strict mutually-exclusive per-finger truth table (zero fuzzy count/OR shortcuts):
+  // 1. EMERGENCY VIGOROUS SHAKE / WAVE -> DOCTOR! (Track 5)
   if (motion.isMoving) {
     candidate = GESTURE_CALL_DOCTOR;
   }
-  // 2. CLOSED FIST -> HELP!
-  else if ((curledCount >= 4) || (index && mid && ring)) {
+  // 2. CLOSED FIST: Thumb + Index + Middle + Ring + Pinky ALL BENT -> HELP! (Track 1)
+  else if (thumb && index && mid && ring && pinky) {
     candidate = GESTURE_NEED_HELP;
   }
-  // 3. THUMBS UP -> THANK YOU
-  else if (!thumb && index && mid && (curledCount >= 2)) {
+  // 3. THUMBS UP: Thumb STRAIGHT; Index + Middle + Ring + Pinky ALL BENT -> THANK YOU (Track 4)
+  else if (!thumb && index && mid && ring && pinky) {
     candidate = GESTURE_THANK_YOU;
   }
-  // 4. I LOVE YOU (ILY) -> LOVE
-  else if (!thumb && !index && !pinky && (mid || ring)) {
-    candidate = GESTURE_LOVE;
-  }
-  // 5. PEACE SIGN -> PEACE
-  else if (!index && !mid && (ring || pinky) && curledCount >= 1) {
-    candidate = GESTURE_PEACE;
-  }
-  // 6. POINTING INDEX -> WATER
-  else if (!index && mid && (ring || pinky || curledCount >= 2)) {
+  // 4. POINTING INDEX: Index STRAIGHT; Middle + Ring + Pinky ALL BENT -> WATER (Track 2)
+  else if (!index && mid && ring && pinky) {
     candidate = GESTURE_WANT_WATER;
   }
-  // 7. OK SIGN -> I'M OKAY
-  else if (thumb && index && !mid && !ring && curledCount <= 3) {
+  // 5. OK SIGN: Thumb + Index BENT; Middle + Ring + Pinky ALL STRAIGHT -> I'M OKAY (Track 3)
+  else if (thumb && index && !mid && !ring && !pinky) {
     candidate = GESTURE_AM_OKAY;
+  }
+  // 6. PEACE SIGN: Index + Middle STRAIGHT; Ring + Pinky BOTH BENT -> PEACE (Track 6)
+  else if (!index && !mid && ring && pinky) {
+    candidate = GESTURE_PEACE;
+  }
+  // 7. I LOVE YOU (ILY): Thumb + Index + Pinky STRAIGHT; Middle + Ring BOTH BENT -> LOVE (Track 7)
+  else if (!thumb && !index && mid && ring && !pinky) {
+    candidate = GESTURE_LOVE;
   }
   else {
     candidate = GESTURE_NONE;
   }
 
-  // State Machine: Triggers each new gesture ONCE after holding 180ms, does not repeat
+  // State Machine: Require steady 420ms hold so hand transitions never misfire
   static GestureId activeGesture = GESTURE_NONE;
   static unsigned long holdStart = 0;
   static GestureId lastTriggered = GESTURE_NONE;
@@ -891,13 +953,20 @@ void detectGesture() {
     activeGesture = candidate;
     holdStart = millis();
   } else {
-    // If neutral / resting hand, release lock after 120ms so same gesture can trigger again!
+    // Wait until hand sits flat/neutral for 350ms before unlocking next trigger
     if (activeGesture == GESTURE_NONE) {
-      if (millis() - holdStart >= 120) {
+      if (millis() - holdStart >= 350) {
         lastTriggered = GESTURE_NONE;
+        currentGesture = GESTURE_NONE;
       }
-    } else if (activeGesture != lastTriggered && (millis() - holdStart >= 180)) {
+    } else if (activeGesture != lastTriggered && (millis() - holdStart >= 420)) {
       currentGesture = activeGesture;
+      Serial.print(F("[GESTURE] MATCHED (T:")); Serial.print(thumb);
+      Serial.print(F(" I:")); Serial.print(index);
+      Serial.print(F(" M:")); Serial.print(mid);
+      Serial.print(F(" R:")); Serial.print(ring);
+      Serial.print(F(" P:")); Serial.print(pinky);
+      Serial.println(F(")"));
       triggerGestureAudio(currentGesture);
       lastTriggered = activeGesture;
       lastTriggerTime = millis();
@@ -911,7 +980,7 @@ void detectGesture() {
 void triggerGestureAudio(GestureId g) {
   // Voice playback cooldown: prevent playing tracks from stuttering or getting chopped
   static unsigned long lastAudioPlayTime = 0;
-  if (millis() - lastAudioPlayTime < 1800) {
+  if (millis() - lastAudioPlayTime < 2400) {
     return; // Wait for track to finish playing!
   }
   lastAudioPlayTime = millis();
@@ -967,7 +1036,9 @@ void triggerGestureAudio(GestureId g) {
 // OLED DISPLAY REFRESH (Clean & Stable 20 FPS)
 // ---==========================
 void updateDisplay() {
-
+#if !ENABLE_OLED
+  return;
+#else
   // Rate-limit OLED redraws to stable ~6.6 FPS (150ms) - snappy & low bus load
   static unsigned long lastOledRefresh = 0;
   if (millis() - lastOledRefresh < 150) return;
@@ -1157,6 +1228,7 @@ void updateDisplay() {
     Wire.clearWireTimeoutFlag();
 
   }
+#endif
 }
 // ---==========================
 // SERIAL TELEMETRY OUTPUT (Live Stream for Arduino Serial Plotter)
@@ -1366,7 +1438,7 @@ void handleSerialCommands() {
     Serial.println(F("[*] Switched to RAW HARDWARE DIAGNOSTIC mode"));
 
   } else if (cmd == 'o' || cmd == 'O') {
-
+#if ENABLE_OLED
     Serial.print(F("[*] Re-initializing OLED Display (0x3C)... "));
     Wire.beginTransmission(0x3C);
     byte oErr = Wire.endTransmission();
@@ -1392,7 +1464,9 @@ void handleSerialCommands() {
       Serial.print(oErr);
       Serial.println(F(") - Check OLED VCC, GND, SDA(A4), SCL(A5) wires!"));
     }
-
+#else
+    Serial.println(F("[*] OLED disabled in firmware (ENABLE_OLED=0)"));
+#endif
   } else if (cmd == 'w' || cmd == 'W') {
 
     Serial.println(F("\n--- LIVE HARDWARE WIRE DIAGNOSTIC ---"));
@@ -1407,14 +1481,14 @@ void handleSerialCommands() {
     Serial.println(F("--------------------------------------\n"));
 
   } else if (cmd == 'f' || cmd == 'F') {
-
+#if ENABLE_OLED
     static uint8_t rot = 2;
     rot = (rot == 2) ? 0 : 2;
     display.setRotation(rot);
     Serial.print(F("[*] Switched OLED Rotation to: "));
     Serial.println(rot);
     refreshOLED(oledColOffset);
-
+#endif
   } else if (cmd >= '1' && cmd <= '7') {
 
     triggerGestureAudio((GestureId)(cmd - '0'));
@@ -1428,10 +1502,12 @@ void handleSerialCommands() {
     Serial.print((sclV * 5.0f) / 1023.0f, 2);
     Serial.println(F("V"));
   } else if (cmd == 'x' || cmd == 'X') {
+#if ENABLE_OLED
     oledColOffset = (oledColOffset == 2) ? 0 : 2;
     Serial.print(F("[*] Switched OLED Column Offset to: "));
     Serial.println(oledColOffset);
     refreshOLED(oledColOffset);
+#endif
   } else if (cmd == 't' || cmd == 'T') {
 
     Serial.println(F("[*] Audio Test: Playing Track 1 ('I need help')..."));
@@ -1486,27 +1562,19 @@ void runAutoCalibration() {
 
   Serial.println(F("---"));
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setTextSize(1);
-
     display.setCursor(0, 5);
-
     display.println(F("CALIBRATION MODE"));
-
     display.println(F("-----------------"));
-
     display.println(F("Step 1:"));
-
     display.println(F("HOLD HAND OPEN"));
-
     display.println(F("& STRAIGHT..."));
-
     refreshOLED(oledColOffset);
-
   }
+#endif
 
   Serial.println(F("[STEP 1/2]: Keep all 5 fingers completely FLAT & STRAIGHT."));
 
@@ -1562,25 +1630,18 @@ void runAutoCalibration() {
 
   }
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setCursor(0, 5);
-
     display.println(F("CALIBRATION MODE"));
-
     display.println(F("-----------------"));
-
     display.println(F("Step 2:"));
-
     display.println(F("CLOSE INTO A"));
-
     display.println(F("TIGHT FIST..."));
-
     refreshOLED(oledColOffset);
-
   }
+#endif
 
   Serial.println(F("\n[STEP 2/2]: Close hand into a TIGHT FIST (Bending all fingers)."));
 
@@ -1656,21 +1717,15 @@ void runAutoCalibration() {
 
   Serial.println(F("---\n"));
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setCursor(10, 20);
-
     display.println(F("CALIBRATION DONE!"));
-
     display.setCursor(10, 36);
-
     display.println(F("Ready to detect!"));
-
     refreshOLED(oledColOffset);
-
     delay(1200);
-
   }
+#endif
 }

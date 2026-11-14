@@ -1,0 +1,110 @@
+[2026-11-14 10:16:52] === Signbridge Background Audio Service Started ===
+[2026-11-14 10:16:52] Connecting to Arduino on COM3...
+[2026-11-14 10:16:52] Successfully connected to COM3. Listening for gestures...
+[2026-11-14 10:17:43] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:17:46] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:17:49] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:18:01] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:18:04] Triggered: GESTURE:AM_OKAY -> Playing 0003.wav
+[2026-11-14 10:18:21] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:18:24] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:18:55] Triggered: GESTURE:WANT_WATER -> Playing 0002.wav
+[2026-11-14 10:19:09] Triggered: GESTURE:PEACE -> Playing 0006.wav
+[2026-11-14 10:41:22] === Signbridge Background Audio Service Started (V2 Threaded) ===
+[2026-11-14 10:41:22] Connecting to Arduino on COM3...
+[2026-11-14 10:41:22] Connected to COM3. Real-time gesture audio listening...
+[2026-11-14 10:41:34] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:42:26] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:42:53] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:43:11] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:43:14] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:43:33] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:43:37] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:43:46] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:43:53] MATCH: GESTURE:THANK_YOU -> Playing Thank you
+[2026-11-14 10:44:03] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:44:06] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:44:13] MATCH: GESTURE:THANK_YOU -> Playing Thank you
+[2026-11-14 10:44:16] MATCH: GESTURE:THANK_YOU -> Playing Thank you
+[2026-11-14 10:44:24] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:44:28] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:44:40] MATCH: GESTURE:THANK_YOU -> Playing Thank you
+[2026-11-14 10:44:43] MATCH: GESTURE:NEED_HELP -> Playing I need help
+[2026-11-14 10:51:03] === Signbridge Background Audio Service Started (V2 Threaded) ===
+[2026-11-14 10:51:03] Connecting to Arduino on COM3...
+[2026-11-14 10:51:03] Connected to COM3. Real-time gesture audio listening...
+[2026-11-14 10:51:29] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:53:57] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:56:03] === Signbridge Background Audio Service Started (V2 Threaded) ===
+[2026-11-14 10:56:04] Connecting to Arduino on COM3...
+[2026-11-14 10:56:04] Connected to COM3. Real-time gesture audio listening...
+[2026-11-14 10:57:21] MATCH: GESTURE:WANT_WATER -> Playing Please give me water
+[2026-11-14 10:57:52] MATCH: GESTURE:PEACE -> Playing Peace
+[2026-11-14 10:57:56] MATCH: GESTURE:PEACE -> Playing Peace
+[2026-11-14 11:04:46] Laptop volume unmuted and boosted.
+[2026-11-14 11:04:46] === Signbridge High-Priority Audio Service Active ===
+[2026-11-14 11:04:46] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:04:46] CONNECTED to COM3. Real-time OLED-to-Laptop audio link active!
+[2026-11-14 11:05:26] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:10:10] Laptop volume unmuted and boosted.
+[2026-11-14 11:10:10] === Signbridge High-Priority Audio Service Active ===
+[2026-11-14 11:10:10] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:10:10] CONNECTED to COM3. Real-time OLED-to-Laptop audio link active!
+[2026-11-14 11:13:22] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:13:28] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:13:31] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:14:41] Serial disconnected: ClearCommError failed (PermissionError(13, 'Access is denied.', None, 5))
+[2026-11-14 11:14:44] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:14:44] CONNECTED to COM3. Real-time OLED-to-Laptop audio link active!
+[2026-11-14 11:18:10] Laptop volume unmuted and boosted.
+[2026-11-14 11:18:10] === Signbridge High-Priority Audio Service Active ===
+[2026-11-14 11:18:10] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:18:10] CONNECTED to COM3. Real-time OLED-to-Laptop audio link active!
+[2026-11-14 11:18:23] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:18:27] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:18:33] [SYNC] OLED Displayed 'GESTURE:PEACE' -> Speaking "Peace"
+[2026-11-14 11:18:42] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:18:49] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:18:55] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:02] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:11] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:20] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:20:39] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:20:43] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:45] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:51] [SYNC] OLED Displayed 'GESTURE:WANT_WATER' -> Speaking "Please give me water"
+[2026-11-14 11:20:57] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:21:03] [SYNC] OLED Displayed 'GESTURE:NEED_HELP' -> Speaking "I need help"
+[2026-11-14 11:21:10] [SYNC] OLED Displayed 'GESTURE:AM_OKAY' -> Speaking "I am okay"
+[2026-11-14 11:21:31] Laptop volume unmuted and boosted.
+[2026-11-14 11:21:31] === Signbridge High-Priority Audio Service Active ===
+[2026-11-14 11:21:31] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:31] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:32] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:32] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:33] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:33] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:35] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:35] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:36] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:36] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:37] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:37] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:38] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:38] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:39] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:39] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:41] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:41] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:42] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:42] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:43] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:43] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:44] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:44] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:45] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:45] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:47] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:47] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)
+[2026-11-14 11:21:48] Connecting to Arduino Glove on COM3...
+[2026-11-14 11:21:48] Port connection error: could not open port 'COM3': PermissionError(13, 'Access is denied.', None, 5)

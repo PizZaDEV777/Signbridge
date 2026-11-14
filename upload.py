@@ -4,7 +4,7 @@ import time
 import subprocess
 import serial.tools.list_ports
 
-HEX_PATH = os.path.abspath('.pio/build/uno/firmware.hex')
+HEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.pio', 'build', 'uno', 'firmware.hex')
 AVRDUDE = os.path.expandvars(r'%USERPROFILE%\.platformio\packages\tool-avrdude\avrdude.exe')
 CONF = os.path.expandvars(r'%USERPROFILE%\.platformio\packages\tool-avrdude\avrdude.conf')
 
@@ -29,7 +29,16 @@ def upload():
         AVRDUDE, '-C', CONF, '-p', 'm328p', '-c', 'arduino', '-P', port, '-b', '115200', '-D',
         '-U', f'flash:w:{HEX_PATH}:i'
     ]
-    print(f'[*] Uploading {HEX_PATH} to {port}...')
+    print(f'[*] Resetting Arduino on {port} and uploading {HEX_PATH}...')
+    try:
+        s = serial.Serial(port, 115200, timeout=0.1)
+        s.setDTR(False)
+        time.sleep(0.05)
+        s.setDTR(True)
+        s.close()
+        time.sleep(0.15)
+    except Exception:
+        pass
     try:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=20)
         print(p.stdout)

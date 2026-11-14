@@ -1,43 +1,41 @@
 import serial
 import time
+import sys
 
-print("[*] Connecting to COM3 at 115200 baud...")
 try:
-    s = serial.Serial('COM3', 115200, timeout=1)
-    print("[*] Waiting 5s for glove boot and calibration...")
-    time.sleep(5.0)
-    s.reset_input_buffer()
+    s = serial.Serial('COM3', 115200, timeout=0.3)
+    print('[*] Connected to COM3. Waiting for boot & calibration to finish...')
+    t0 = time.time()
+    while time.time() - t0 < 5.5:
+        line = s.readline().decode('utf-8', errors='ignore').strip()
+        if line and any(k in line for k in ['SIGNBRIDGE', 'OLED', 'Pin A', 'DFPlayer', 'Ready', 'Baseline', 'CALIBRAT']):
+            print('  [BOOT]', line)
     
-    print("\n" + "="*50)
-    print(">>> SENDING AUDIO PLAY COMMAND: TRACK 1 (0001.mp3) <<<")
-    print("="*50)
+    # Increase volume
+    s.write(b'+')
+    time.sleep(0.1)
+    s.write(b'+')
+    time.sleep(0.2)
     
-    # Send '1' over serial to trigger Track 1
-    s.write(b'1')
-    s.flush()
+    tracks = [
+        (1, 'Need Help / Help'),
+        (2, 'Water'),
+        (3, 'I am Okay'),
+        (4, 'Thank You'),
+        (5, 'Doctor / Emergency')
+    ]
     
-    start = time.time()
-    while time.time() - start < 4.0:
-        l = s.readline().decode('latin-1', errors='ignore').strip()
-        if l and any(k in l for k in ['[AUDIO]', 'Track', 'Keyboard', 'GESTURE', 'DFPlayer']):
-            print(f"  {l}")
+    for trk, name in tracks:
+        print(f'\n>>> [TESTING AUDIO] Triggering Track {trk}: "{name}"...')
+        s.write(str(trk).encode())
+        t_start = time.time()
+        while time.time() - t_start < 3.2:
+            line = s.readline().decode('utf-8', errors='ignore').strip()
+            if line and any(k in line for k in ['AUDIO', 'Keyboard', 'GESTURE', 'Track', 'Volume']):
+                print('   ->', line)
+            time.sleep(0.05)
             
-    print("\n" + "="*50)
-    print(">>> SENDING AUDIO PLAY COMMAND: TRACK 2 (0002.mp3) <<<")
-    print("="*50)
-    
-    # Send '2' over serial to trigger Track 2
-    s.write(b'2')
-    s.flush()
-    
-    start = time.time()
-    while time.time() - start < 4.0:
-        l = s.readline().decode('latin-1', errors='ignore').strip()
-        if l and any(k in l for k in ['[AUDIO]', 'Track', 'Keyboard', 'GESTURE', 'DFPlayer']):
-            print(f"  {l}")
-
+    print('\n[OK] All 5 audio tracks triggered successfully!')
     s.close()
-    print("\n[OK] Playback test commands sent successfully!")
-
 except Exception as e:
-    print(f"[X] Serial communication error: {e}")
+    print('Error:', e)

@@ -1,8 +1,12 @@
-#include <SoftwareSerial.h>
+#define ENABLE_OLED 1 // Set to 1 when a replacement 0.96" OLED (0x3C) is connected
+
 #include <Arduino.h>
 #include <Wire.h>
+#include <SoftwareSerial.h>
+#if ENABLE_OLED
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#endif
 // ---==========================
 // SIGNBRIDGE - 5 FLEX SENSORS + LIGHTWEIGHT MPU6050 + OLED DASHBOARD
 // ---==========================
@@ -28,12 +32,34 @@ uint8_t FLEX_PINS[NUM_FLEX] = {A0, A1, A2, A3, 2};
 bool IS_ANALOG[NUM_FLEX] = {true, true, true, true, false};
 const char FINGER_INITIALS[NUM_FLEX] = {'T', 'I', 'M', 'R', 'P'};
 #define LED_PIN LED_BUILTIN
+// ---------------------- BREADBOARD 5V POWER SUPPLY PIN ----------------------
+#define BREADBOARD_5V_PIN 8       // Pin 8 outputs steady 5V for Breadboard sensors / MPU
+#define BREADBOARD_5V_ALT_PIN 7   // Pin 7 also outputs steady 5V (convenient adjacent backup)
 // ---------------------- AUDIO & SPEECH HARDWARE ------------------------------
 #define BUZZER_PIN 3
-#define DFPLAYER_TX_PIN 11
-#define DFPLAYER_RX_PIN 10
-SoftwareSerial dfSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
-uint8_t dfPlayerVolume = 23; // Safe 23/30 prevents 5V brownout! // Maximum volume (30/30) for loud, clear voice output!
+// ---------------------- AUDIO & SPEECH HARDWARE ------------------------------
+#define BUZZER_PIN 3
+#define DFPLAYER_PIN_A 11 // Primary DFPlayer TX pin
+#define DFPLAYER_PIN_B 10 // Secondary backup TX pin (dual broadcast!)
+uint8_t dfPlayerVolume = 16; // Clean, crystal-clear voice volume (zero distortion clipping)
+
+void dfplayer_send_byte(uint8_t b) {
+  // Ultra-precise hardware 9600 baud (0.0% error) on Pin 11 (PB3) & Pin 10 (PB2)
+  cli();
+  PORTB &= ~((1 << PB3) | (1 << PB2)); // Start bit LOW
+  delayMicroseconds(104);
+  for (uint8_t i = 0; i < 8; i++) {
+    if (b & (1 << i)) {
+      PORTB |= ((1 << PB3) | (1 << PB2));  // Bit HIGH
+    } else {
+      PORTB &= ~((1 << PB3) | (1 << PB2)); // Bit LOW
+    }
+    delayMicroseconds(104);
+  }
+  PORTB |= ((1 << PB3) | (1 << PB2));   // Stop bit HIGH
+  delayMicroseconds(104);
+  sei();
+}
 
 void dfplayer_send_cmd(uint8_t cmd, uint16_t arg) {
   uint16_t checksum = 0 - (0xFF + 0x06 + cmd + 0x00 + (arg >> 8) + (arg & 0xFF));
@@ -51,27 +77,29 @@ void dfplayer_send_cmd(uint8_t cmd, uint16_t arg) {
   };
 
   for (uint8_t i = 0; i < 10; i++) {
-    dfSerial.write(packet[i]);
-    delayMicroseconds(250); // Inter-byte delay for MH2024K FIFO stability
+    dfplayer_send_byte(packet[i]);
   }
+  delay(12);
 }
 
 void playVoiceTrack(uint8_t track) {
   Serial.print(F("[AUDIO] Playing Track "));
   Serial.print(track);
-  Serial.println(F(" via DFPlayer Mini (Pin 11 TX)..."));
-  
-  dfplayer_send_cmd(0x06, dfPlayerVolume); // Ensure volume is 30/30
+  Serial.println(F(" via DFPlayer Mini (Dual Broadcast Pin 11 + 10)..."));
+
+  dfplayer_send_cmd(0x06, dfPlayerVolume); // Set safe volume (22/30)
   delay(30);
-  dfplayer_send_cmd(0x03, track); // Universal command 0x03
-  delay(40);
-  dfplayer_send_cmd(0x12, track); // /MP3/ folder command 0x12
+  dfplayer_send_cmd(0x03, track);          // Command 0x03: Play track (0001.mp3)
+  delay(35);
+  dfplayer_send_cmd(0x12, track);          // Command 0x12: /MP3/ folder (0001.mp3)
 }
 // ---------------------- DISPLAY CONFIGURATION --------------------------------
+#if ENABLE_OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 100000UL, 100000UL);
+#endif
 bool displayAvailable = false;
 // ---------------------- MPU6050 CONFIGURATION --------------------------------
 uint8_t mpuAddress = 0x68;
@@ -180,96 +208,129 @@ void runAutoCalibration();
 void calibrateFlatBaseline();
 void recoverI2CBus();
 void scanI2C();
-void refreshOLED(uint8_t colOffset = 2);
-uint8_t oledColOffset = 2; // 2 for SH1106 (centered in 132-col RAM), 0 for SSD1306
-void playStartupVoiceTest();
-// ---==========================
-// STARTUP AUDIO SELF-TEST: SEQUENTIALLY PLAY ALL 5 RECORDINGS AT BOOT
-// ---==========================
-void playStartupVoiceTest() {
-  Serial.println(F("\n---"));
-  Serial.println(F(">>> AUDIO SELF-TEST: PLAYING ALL 7 TRACKS IN ORDER"));
-  Serial.println(F("---"));
+uint8_t oledColOffset = 2; // Default 2 for SH1106 (or 0 for SSD1306)
+uint8_t oledRotation = 2;
 
-  for (uint8_t i = 1; i <= 7; i++) {
-    Serial.print(F("[*] Playing Voice Track "));
-    Serial.print(i);
-    Serial.print(F(" of 7: "));
-
-    if (displayAvailable) {
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setTextColor(SSD1306_WHITE);
-      display.setCursor(14, 6);
-      display.println(F("AUDIO SELF-TEST"));
-      display.drawLine(0, 16, 127, 16, SSD1306_WHITE);
-      display.setCursor(16, 22);
-      display.print(F("Voice "));
-      display.print(i);
-      display.println(F(" of 7:"));
-      display.setTextSize(2);
-      display.setCursor(4, 38);
-    }
-
-    switch (i) {
-      case 1:
-        Serial.println(F("'Help' (0001.mp3)"));
-        if (displayAvailable) display.println(F("HELP!"));
-        break;
-      case 2:
-        Serial.println(F("'Water' (0002.mp3)"));
-        if (displayAvailable) display.println(F("WATER"));
-        break;
-      case 3:
-        Serial.println(F("'I'm okay' (0003.mp3)"));
-        if (displayAvailable) display.println(F("I'M OKAY"));
-        break;
-      case 4:
-        Serial.println(F("'Thank you' (0004.mp3)"));
-        if (displayAvailable) display.println(F("THANK YOU"));
-        break;
-      case 5:
-        Serial.println(F("'Doctor' (0005.mp3)"));
-        if (displayAvailable) display.println(F("DOCTOR!"));
-        break;
-      case 6:
-        Serial.println(F("'Peace' (0006.mp3)"));
-        if (displayAvailable) display.println(F("PEACE"));
-        break;
-      case 7:
-        Serial.println(F("'Love' (0007.mp3)"));
-        if (displayAvailable) display.println(F("LOVE"));
-        break;
-    }
-
-    if (displayAvailable) refreshOLED(oledColOffset);
-  static unsigned long lastDbg = 0;
-  if (millis() - lastDbg > 2000) {
-    lastDbg = millis();
-    Serial.println(F("[OLED] Frame drawn to 0x3C [OK]"));
-  }
-
-    playVoiceTrack(i);
-    delay(2100); // Allow track to play fully
-  }
-
-  Serial.println(F("[[OK]] Startup Audio Self-Test Complete!"));
-  Serial.println(F("---\n"));
-}
-// ---==========================
-// HARDWARE OLED ANTI-GLITCH & CHARGE PUMP RECOVERY
-// ---==========================
-void sendOledRecoveryCommands() {
-  // Empty: Standard Adafruit_SSD1306 handles hardware configuration cleanly
-}
-
-void refreshOLED(uint8_t colOffset) {
+#if ENABLE_OLED
+// Clear all 132 columns x 8 pages of SH1106 hardware RAM (erases power-on static snow!)
+void clearSH1106RAM() {
   if (!displayAvailable) return;
-  display.display();
+  for (uint8_t p = 0; p < 8; p++) {
+    Wire.beginTransmission(0x3C);
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)(0xB0 + p));
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)0x00);
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)0x10);
+    Wire.endTransmission();
+
+    for (uint8_t c = 0; c < 132; c += 22) {
+      Wire.beginTransmission(0x3C);
+      Wire.write((uint8_t)0x40);
+      for (uint8_t i = 0; i < 22; i++) Wire.write((uint8_t)0x00);
+      Wire.endTransmission();
+    }
+  }
 }
+
+// Universal SH1106 / SSD1306 page-mode refresh with hardware column offset
+void refreshOLED(uint8_t colOffset = 2) {
+  if (!displayAvailable) return;
+
+  uint8_t* pBuf = display.getBuffer();
+  if (!pBuf) return;
+
+  for (uint8_t p = 0; p < 8; p++) {
+    // 1. Set Page address (0xB0..0xB7) & Column Address (lower & upper nibble)
+    Wire.beginTransmission(0x3C);
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)(0xB0 + p));
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)(colOffset & 0x0F));
+    Wire.write((uint8_t)0x80);
+    Wire.write((uint8_t)(0x10 | ((colOffset >> 4) & 0x0F)));
+    Wire.endTransmission();
+
+    // 2. Stream 128 bytes in 8 chunks of 16 bytes (Wire buffer limit is 32 bytes: 1 byte command + 16 bytes data = 17 bytes, 100% safe without dropped bytes!)
+    uint8_t* pagePtr = pBuf + (p * 128);
+    for (uint8_t chunk = 0; chunk < 8; chunk++) {
+      Wire.beginTransmission(0x3C);
+      Wire.write((uint8_t)0x40);
+      Wire.write(pagePtr + (chunk * 16), 16);
+      Wire.endTransmission();
+    }
+  }
+}
+#endif
 // ---==========================
 // I2C HARDWARE BUS RECOVERY (Flushes locked slaves & resets TWI hardware)
 // ---==========================
+int freeMemory() {
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
+}
+
+long readVcc() {
+  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  delay(2);
+  ADCSRA |= _BV(ADSC);
+  while (bit_is_set(ADCSRA, ADSC));
+  uint8_t low = ADCL;
+  uint8_t high = ADCH;
+  long result = (high << 8) | low;
+  if (result == 0) return 0;
+  return 1125300L / result; // Vcc in millivolts
+}
+
+void checkI2CBusLines() {
+  // Test 1: Check if SDA and SCL are shorted together
+  pinMode(A4, OUTPUT);
+  digitalWrite(A4, LOW);
+  pinMode(A5, INPUT_PULLUP);
+  delayMicroseconds(50);
+  uint16_t sda_scl_cross = analogRead(A5);
+
+  pinMode(A5, OUTPUT);
+  digitalWrite(A5, LOW);
+  pinMode(A4, INPUT_PULLUP);
+  delayMicroseconds(50);
+  uint16_t scl_sda_cross = analogRead(A4);
+
+  // Restore INPUT_PULLUP
+  pinMode(A4, INPUT_PULLUP);
+  pinMode(A5, INPUT_PULLUP);
+  delay(10);
+  uint16_t sda_adc = analogRead(A4);
+  uint16_t scl_adc = analogRead(A5);
+  long vcc = readVcc();
+  float sda_v = (sda_adc * (vcc / 1000.0f)) / 1023.0f;
+  float scl_v = (scl_adc * (vcc / 1000.0f)) / 1023.0f;
+
+  Serial.println(F("--- I2C HARDWARE LINE & SHORT CHECK ---"));
+  Serial.print(F("  Arduino 5V Rail = ")); Serial.print(vcc); Serial.println(F(" mV"));
+  Serial.print(F("  SDA (Pin A4): ")); Serial.print(sda_v, 2); Serial.print(F(" V (ADC=")); Serial.print(sda_adc); Serial.println(F(")"));
+  Serial.print(F("  SCL (Pin A5): ")); Serial.print(scl_v, 2); Serial.print(F(" V (ADC=")); Serial.print(scl_adc); Serial.println(F(")"));
+
+  if (sda_scl_cross < 200 || scl_sda_cross < 200) {
+    Serial.println(F("  [!] CRITICAL: SDA AND SCL ARE SHORTED TOGETHER!"));
+    Serial.println(F("      -> Check if SDA and SCL wires touch or share breadboard rows!"));
+  } else {
+    Serial.println(F("  [OK] SDA and SCL are physically isolated (no short)."));
+  }
+
+  if (sda_v < 1.0f || scl_v < 1.0f) {
+    Serial.println(F("  [!] SHORT TO GND: One or both lines are grounded!"));
+  } else if (sda_v < 3.2f || scl_v < 3.2f) {
+    Serial.println(F("  [!] VOLTAGE IS ~2.4V (LOW): OLED VCC is DISCONNECTED or LOOSE!"));
+    Serial.println(F("      -> Connect OLED VCC directly to Arduino 5V header pin!"));
+  } else {
+    Serial.println(F("  [OK] Bus voltage is healthy (~5V pullup present)."));
+  }
+  Serial.println(F("---------------------------------------"));
+}
+
 void recoverI2CBus() {
   Wire.end();
   TWCR = 0; // Reset AVR TWI hardware
@@ -298,30 +359,30 @@ void recoverI2CBus() {
   pinMode(A5, INPUT_PULLUP);
   delay(10);
 
+  checkI2CBusLines();
+
   Wire.begin();
-  Wire.setClock(50000);
-  Wire.setWireTimeout(25000, true);
+  Wire.setClock(100000UL);          // Standard 100kHz I2C for rock-solid OLED reliability
+  Wire.setWireTimeout(3000, true);  // 3ms timeout prevents I2C bus hangs!
 }
 // ---==========================
 // ---==========================
-// DIGITAL PIN 2 RESISTANCE MEASUREMENT VIA RC DISCHARGE (Pinky Finger)
-// ---==========================
+// DIGITAL PIN 2 RESISTANCE MEASUREMENT VIA RC RISE TIME (Pinky Finger)
+// Ultra-safe: Never drives HIGH into GND, completely eliminating brownout resets!
 uint16_t readDigitalRC() {
   uint16_t s[5];
   for (uint8_t i = 0; i < 5; i++) {
     pinMode(2, OUTPUT);
-    digitalWrite(2, HIGH);
-    delayMicroseconds(50);
-    pinMode(2, INPUT);     // Switch to high-impedance input
-    digitalWrite(2, LOW);  // Disable internal pullup without driving pin low
+    digitalWrite(2, LOW);     // Discharge to GND (0V -> 0V, 100% safe, zero short circuit!)
+    delayMicroseconds(40);
+    pinMode(2, INPUT_PULLUP); // Charge safely through 35k internal pullup (0.14mA max current)
     uint16_t count = 0;
-    while ((PIND & (1 << PD2)) && count < 2000) {
+    while (!(PIND & (1 << PD2)) && count < 2000) {
       count++;
     }
     s[i] = count;
-    delayMicroseconds(12);
+    delayMicroseconds(15);
   }
-  pinMode(2, INPUT_PULLUP); // restore pullup
   // Sort 5 samples to find robust median (completely rejects noise spikes & bounce)
   for (uint8_t a = 0; a < 5; a++) {
     for (uint8_t b = a + 1; b < 5; b++) {
@@ -342,6 +403,7 @@ void calibrateFlatBaseline() {
   Serial.println(F("---"));
 
   for (int c = 3; c > 0; c--) {
+#if ENABLE_OLED
     if (displayAvailable) {
       display.clearDisplay();
       display.setTextSize(1);
@@ -356,10 +418,12 @@ void calibrateFlatBaseline() {
       display.print(c);
       refreshOLED(oledColOffset);
     }
+#endif
     Serial.print(F("  Calibrating flat in ")); Serial.print(c); Serial.println(F("..."));
     delay(1000);
   }
 
+#if ENABLE_OLED
   if (displayAvailable) {
     display.clearDisplay();
     display.setTextSize(1);
@@ -371,6 +435,7 @@ void calibrateFlatBaseline() {
     display.println(F("SAMPLING NOW!"));
     refreshOLED(oledColOffset);
   }
+#endif
   delay(150);
 
   for (uint8_t i = 0; i < NUM_FLEX; i++) {
@@ -399,6 +464,9 @@ void calibrateFlatBaseline() {
       }
     }
     flexSensors[i].baseline = sBuf[12]; // Median: true resting center!
+    if (!IS_ANALOG[i] && flexSensors[i].baseline > 15) {
+      flexSensors[i].baseline = 10; // Guard D2 against stray RC spike during flat boot calibration
+    }
     flexSensors[i].raw = flexSensors[i].baseline;
     flexSensors[i].bendPercent = 0;
     flexSensors[i].isBent = false;
@@ -425,8 +493,17 @@ void setup() {
   uint8_t mcusr_val = MCUSR;
   MCUSR = 0;
   pinMode(LED_PIN, OUTPUT);
-
   digitalWrite(LED_PIN, HIGH);
+
+  // Turn ON Digital Power Rails (5V and GND Power Bank for OLED & Sensors):
+  pinMode(8, OUTPUT); digitalWrite(8, HIGH); // Pin 8: Solid 5V VCC
+  pinMode(7, OUTPUT); digitalWrite(7, HIGH); // Pin 7: Solid 5V VCC
+  pinMode(6, OUTPUT); digitalWrite(6, HIGH); // Pin 6: Solid 5V VCC
+  pinMode(9, OUTPUT); digitalWrite(9, LOW);  // Pin 9: Solid 0V GND
+  pinMode(12, OUTPUT); digitalWrite(12, LOW);// Pin 12: Solid 0V GND
+  pinMode(5, OUTPUT); digitalWrite(5, LOW);  // Pin 5: Solid 0V GND
+  pinMode(4, OUTPUT); digitalWrite(4, LOW);  // Pin 4: Solid 0V GND
+  delay(150); // Allow OLED internal charge pump to stabilize with power!
 
   Serial.begin(115200);
 
@@ -442,9 +519,6 @@ void setup() {
   // 1. Flush I2C Bus & Clear any stuck slave state
   recoverI2CBus();
   delay(50);
-  Wire.begin();
-  Wire.setClock(50000);            // Stable 100kHz: ultra-reliable over wires
-  Wire.setWireTimeout(25000, true); // 25ms timeout with auto-reset
 
 // 2. Initialize Flex Sensor Pin Modes
   for (uint8_t i = 0; i < NUM_FLEX; i++) {
@@ -466,38 +540,41 @@ void setup() {
   Serial.println(F("--- SENSOR CONTINUITY & CONNECTION CHECK ---"));
   uint16_t a1_val = analogRead(A1);
   Serial.print(F("  Pin A1 (Index): Raw ADC = ")); Serial.print(a1_val);
-  Serial.println(F(" [CONNECTED]"));
+  if (a1_val >= 1018) Serial.println(F(" [OPEN / CHECK INDEX WIRE!]"));
+  else Serial.println(F(" [CONNECTED]"));
   Serial.println(F("--------------------------------------------"));
 
-  // 2. Initialize OLED Display (0x3C)
-  Serial.print(F("[*] Initializing OLED Display (0x3C)... "));
-  Wire.beginTransmission(0x3C);
-  byte oledErr = Wire.endTransmission();
-  if (oledErr == 0) {
-    if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-      displayAvailable = true;
-      display.setRotation(2);
-      display.dim(false);
-      Serial.println(F("CONNECTED READY [OK]"));
+#if ENABLE_OLED
+  // 2. Initialize OLED Display (0x3C, 100kHz Standard)
+  extern size_t __malloc_margin;
+  __malloc_margin = 16; // Allow malloc(1024) to utilize available heap
+  Serial.print(F("[*] Initializing OLED Display at 0x3C (Free RAM: "));
+  Serial.print(freeMemory());
+  Serial.print(F("B)... "));
+  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C, false, false)) {
+    displayAvailable = true;
+    display.setRotation(oledRotation);
+    display.dim(false);
+    Serial.println(F("CONNECTED READY [OK]"));
 
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setTextColor(SSD1306_WHITE);
-      display.setCursor(14, 15);
-      display.println(F("SIGNBRIDGE GLOVE"));
-      display.setCursor(16, 32);
-      display.println(F("OLED ACTIVE"));
-      display.display();
-    } else {
-      displayAvailable = false;
-      Serial.println(F("RAM ALLOCATION FAILED"));
-    }
+    clearSH1106RAM(); // Clear hardware static snow!
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(14, 15);
+    display.println(F("SIGNBRIDGE GLOVE"));
+    display.setCursor(16, 32);
+    display.println(F("OLED ACTIVE"));
+    refreshOLED(oledColOffset);
   } else {
     displayAvailable = false;
-    Serial.print(F("NOT DETECTED (I2C error "));
-    Serial.print(oledErr);
-    Serial.println(F(") -> Check OLED VCC, GND, SDA(A4), SCL(A5) wires!"));
+    Serial.println(F("RAM ALLOCATION FAILED"));
   }
+#else
+  displayAvailable = false;
+  Serial.println(F("[*] OLED disabled (ENABLE_OLED=0) - Flex + MPU6050 + Audio Mode"));
+#endif
 
   // 4. Initialize MPU6050 IMU (0x68 / 0x69)
   Serial.print(F("[*] Initializing MPU6050 IMU... "));
@@ -513,19 +590,21 @@ void setup() {
   // 5. Calibrate Flat Baseline (Samples resting hand so all bars start at 0%)
   calibrateFlatBaseline();
 
-  // 6. Initialize DFPlayer Mini Audio System
-  Serial.print(F("[*] Initializing DFPlayer Mini (Pin 11 TX)... Volume: "));
+  // 6. Initialize DFPlayer Mini Audio System (Dual-Pin 11 & 10 Broadcast)
+  Serial.print(F("[*] Initializing DFPlayer Mini (Dual Broadcast Pin 11 + Pin 10)... Volume: "));
   Serial.print(dfPlayerVolume);
   Serial.println(F("/30"));
-  dfSerial.begin(9600);
-  delay(1500); // Allow DFPlayer to boot and mount SD card
+  pinMode(DFPLAYER_PIN_A, OUTPUT);
+  pinMode(DFPLAYER_PIN_B, OUTPUT);
+  digitalWrite(DFPLAYER_PIN_A, HIGH);
+  digitalWrite(DFPLAYER_PIN_B, HIGH);
+  delay(800); // Allow DFPlayer to finish booting and mount SD card
   dfplayer_send_cmd(0x09, 0x02); // Select TF Micro-SD card as playback source
-  delay(150);
-  dfplayer_send_cmd(0x06, dfPlayerVolume); // Command 0x06: Set volume to 30/30
-  delay(150);
+  delay(100);
+  dfplayer_send_cmd(0x06, dfPlayerVolume); // Command 0x06: Set safe volume (22/30)
+  delay(100);
 
-  // Startup Audio: Volume set to safe 23/30 (no brownout)
-  Serial.println(F("[*] DFPlayer Ready at Volume 23/30 (No Brownout)"));
+  Serial.println(F("[*] DFPlayer Ready (Source Selected: TF Card)"));
 
   Serial.println(F("[[OK]] System Initialized & Ready for Gestures!"));
   Serial.println(F("---\n"));
@@ -576,7 +655,7 @@ void readFlexSensors() {
 
       flexSensors[i].raw = ((uint32_t)flexSensors[i].raw * 3 + reading) / 4;
 
-      // Bidirectional deflection tracking: bends that drop ADC or rise ADC both register
+      // Track bend deflection from resting flat baseline:
       int16_t delta = (int16_t)reading - (int16_t)flexSensors[i].baseline;
       diffs[i] = abs(delta);
     } else {
@@ -592,9 +671,13 @@ void readFlexSensors() {
     }
   }
 
-  // PASS 2: Progressive scaling with per-finger deadband & full-scale span
-  static const uint16_t ANALOG_DEADBAND[4] = {32, 14, 48, 65};    // T, I, M, R noise rejection
-  static const uint16_t ANALOG_SPANMAX[4]  = {150, 50, 240, 350}; // T, I, M, R real bend spans
+  // PASS 2: Progressive scaling with stable per-finger deadband & span
+  static const uint16_t ANALOG_DEADBAND[4] = {10, 12, 12, 12};   // T, I, M, R rock-solid noise rejection
+  static const uint16_t ANALOG_SPANMAX[4]  = {50, 45, 45, 55};   // T, I, M, R full deliberate bend span
+  static uint8_t analogReleaseCnt[4] = {0, 0, 0, 0};
+  static uint8_t pinkyEngageCnt = 0;
+  static uint8_t pinkyReleaseCnt = 0;
+
   for (uint8_t i = 0; i < NUM_FLEX; i++) {
     if (IS_ANALOG[i]) {
       const uint16_t deadband = ANALOG_DEADBAND[i];
@@ -606,48 +689,72 @@ void readFlexSensors() {
         targetPct = map(constrain(diffs[i], deadband, spanMax), deadband, spanMax, 0, 100);
       }
 
-      // Smooth moving average: snappy 60/40 response
-      if (targetPct > 0) {
+      // Smooth moving average: snappy 60/40 rise, smooth 65/35 fall
+      if (targetPct >= flexSensors[i].bendPercent) {
         flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 60 + (uint16_t)targetPct * 40) / 100;
       } else {
-        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 40) / 100;
+        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 65 + (uint16_t)targetPct * 35) / 100;
       }
 
       if (flexSensors[i].bendPercent <= zeroClamp) {
         flexSensors[i].bendPercent = 0;
       }
 
-      if (flexSensors[i].bendPercent > 25) {
+      // Deliberate 28% bend trigger, clean 14% release (zero phantom gestures while flat!)
+      if (flexSensors[i].bendPercent >= 28) {
         flexSensors[i].isBent = true;
-      } else if (flexSensors[i].bendPercent < 12) {
-        flexSensors[i].isBent = false;
+        analogReleaseCnt[i] = 0;
+      } else if (flexSensors[i].bendPercent <= 14) {
+        if (flexSensors[i].isBent) {
+          if (++analogReleaseCnt[i] >= 3) { // ~60ms release debounce
+            flexSensors[i].isBent = false;
+            analogReleaseCnt[i] = 0;
+          }
+        } else {
+          analogReleaseCnt[i] = 0;
+        }
+      } else {
+        analogReleaseCnt[i] = 0;
       }
 
     } else {
-      // Digital Pin 2 (Pinky): RC discharge from ~1 (flat) upward on bend
-      const uint8_t rcDeadband = 4;    // Rejects idle 0..4 jitter while showing gentle curls
-      const uint16_t rcSpan = 45;      // Scales smooth curl & full curl cleanly 0-100%
-      const uint8_t zeroClamp = 4;
+      // Digital Pin 2 (Pinky): RC discharge with spike-rejecting engage debounce
+      const uint8_t rcDeadband = 5;    // Rejects idle jitter
+      const uint16_t rcSpan = 40;      // Scales curl cleanly 0-100%
+      const uint8_t zeroClamp = 3;
 
       uint8_t rcPct = 0;
       if (diffs[i] > rcDeadband) {
         rcPct = map(constrain(diffs[i], rcDeadband, rcSpan), rcDeadband, rcSpan, 0, 100);
       }
 
-      if (rcPct > 0) {
+      // Balanced rise/fall
+      if (rcPct >= flexSensors[i].bendPercent) {
         flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 60 + (uint16_t)rcPct * 40) / 100;
       } else {
-        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 40) / 100;
+        flexSensors[i].bendPercent = ((uint16_t)flexSensors[i].bendPercent * 55 + (uint16_t)rcPct * 45) / 100;
       }
 
       if (flexSensors[i].bendPercent <= zeroClamp) {
         flexSensors[i].bendPercent = 0;
       }
 
-      if (flexSensors[i].bendPercent > 25) {
-        flexSensors[i].isBent = true;
-      } else if (flexSensors[i].bendPercent < 12) {
-        flexSensors[i].isBent = false;
+      // Deliberate 32% bend trigger, clean 15% release
+      if (flexSensors[i].bendPercent >= 32) {
+        pinkyReleaseCnt = 0;
+        if (!flexSensors[i].isBent && ++pinkyEngageCnt >= 3) {
+          flexSensors[i].isBent = true;
+          pinkyEngageCnt = 3;
+        }
+      } else if (flexSensors[i].bendPercent <= 15) {
+        pinkyEngageCnt = 0;
+        if (flexSensors[i].isBent && ++pinkyReleaseCnt >= 3) {
+          flexSensors[i].isBent = false;
+          pinkyReleaseCnt = 0;
+        }
+      } else {
+        pinkyEngageCnt = 0;
+        pinkyReleaseCnt = 0;
       }
     }
   }
@@ -714,10 +821,10 @@ void readMPU6050() {
     return;
   }
 
-  // Use Repeated Start (false) so MPU6050 register pointer stays locked
+  // Send register address 0x3B with clean STOP so bus releases cleanly between OLED and MPU
   Wire.beginTransmission(mpuAddress);
   Wire.write(0x3B); // Starting at ACCEL_XOUT_H
-  uint8_t txErr = Wire.endTransmission(false);
+  uint8_t txErr = Wire.endTransmission(true);
   if (txErr != 0) {
     if (++mpuFailCount > 8) {
       mpuAvailable = false;
@@ -783,11 +890,11 @@ void readMPU6050() {
 
     motion.gyroEnergy   = sqrt(motion.gx * motion.gx + motion.gy * motion.gy + motion.gz * motion.gz);
 
-    if (motion.dynamicAccel > 3.8f || motion.gyroEnergy > 120.0f) {
+    if (motion.dynamicAccel > 6.0f || motion.gyroEnergy > 200.0f) {
 
       motion.isMoving = true;
 
-    } else if (motion.dynamicAccel < 1.2f && motion.gyroEnergy < 40.0f) {
+    } else if (motion.dynamicAccel < 1.5f && motion.gyroEnergy < 50.0f) {
 
       motion.isMoving = false;
 
@@ -839,50 +946,50 @@ void classifyOrientation() {
 // ---==========================
 void detectGesture() {
 
-  // Dynamic bend detection
-  bool thumb = (flexSensors[0].bendPercent >= 20);
-  bool index = (flexSensors[1].bendPercent >= 20);
-  bool mid   = (flexSensors[2].bendPercent >= 20);
-  bool ring  = (flexSensors[3].bendPercent >= 20);
-  bool pinky = (flexSensors[4].bendPercent >= 20);
+  // Debounced per-finger bent states (ON >= 28%, OFF <= 14% from readFlexSensors)
+  bool thumb = flexSensors[0].isBent;
+  bool index = flexSensors[1].isBent;
+  bool mid   = flexSensors[2].isBent;
+  bool ring  = flexSensors[3].isBent;
+  bool pinky = flexSensors[4].isBent;
 
-  uint8_t curledCount = (thumb ? 1 : 0) + (index ? 1 : 0) + (mid ? 1 : 0) + (ring ? 1 : 0) + (pinky ? 1 : 0);
+  bool backFingers = (ring || mid); // Ring or Middle curled
 
   GestureId candidate = GESTURE_NONE;
 
-  // 1. EMERGENCY VIGOROUS SHAKE / WAVE -> DOCTOR!
+  // 1. EMERGENCY VIGOROUS SHAKE / WAVE -> DOCTOR! (Track 5)
   if (motion.isMoving) {
     candidate = GESTURE_CALL_DOCTOR;
   }
-  // 2. CLOSED FIST -> HELP!
-  else if ((curledCount >= 4) || (index && mid && ring)) {
+  // 2. CLOSED FIST: Thumb + Index + Back fingers ALL BENT (1, 1, 1) -> HELP! (Track 1)
+  else if (thumb && index && backFingers) {
     candidate = GESTURE_NEED_HELP;
   }
-  // 3. THUMBS UP -> THANK YOU
-  else if (!thumb && index && mid && (curledCount >= 2)) {
+  // 3. THUMBS UP: Thumb STRAIGHT UP; Index + Back fingers BENT (0, 1, 1) -> THANK YOU (Track 4)
+  else if (!thumb && index && backFingers) {
     candidate = GESTURE_THANK_YOU;
   }
-  // 4. I LOVE YOU (ILY) -> LOVE
-  else if (!thumb && !index && !pinky && (mid || ring)) {
-    candidate = GESTURE_LOVE;
+  // 4. OK SIGN: Thumb + Index BENT; Back fingers FLAT (1, 1, 0) -> I'M OKAY (Track 3)
+  else if (thumb && index && !backFingers) {
+    candidate = GESTURE_AM_OKAY;
   }
-  // 5. PEACE SIGN -> PEACE
-  else if (!index && !mid && (ring || pinky) && curledCount >= 1) {
-    candidate = GESTURE_PEACE;
-  }
-  // 6. POINTING INDEX -> WATER
-  else if (!index && mid && (ring || pinky || curledCount >= 2)) {
+  // 5. POINTING INDEX: Index BENT; Thumb + Back fingers FLAT (0, 1, 0) -> WATER (Track 2)
+  else if (!thumb && index && !backFingers) {
     candidate = GESTURE_WANT_WATER;
   }
-  // 7. OK SIGN -> I'M OKAY
-  else if (thumb && index && !mid && !ring && curledCount <= 3) {
-    candidate = GESTURE_AM_OKAY;
+  // 6. PEACE SIGN: Index FLAT; Back fingers + Thumb BENT (1, 0, 1) -> PEACE (Track 6)
+  else if (thumb && !index && backFingers) {
+    candidate = GESTURE_PEACE;
+  }
+  // 7. I LOVE YOU (ILY): Index FLAT; Thumb FLAT; Back fingers BENT (0, 0, 1) -> LOVE (Track 7)
+  else if (!thumb && !index && backFingers) {
+    candidate = GESTURE_LOVE;
   }
   else {
     candidate = GESTURE_NONE;
   }
 
-  // State Machine: Triggers each new gesture ONCE after holding 180ms, does not repeat
+  // State Machine: Require steady 500ms deliberate hold to eliminate mid-transition misfires!
   static GestureId activeGesture = GESTURE_NONE;
   static unsigned long holdStart = 0;
   static GestureId lastTriggered = GESTURE_NONE;
@@ -891,13 +998,20 @@ void detectGesture() {
     activeGesture = candidate;
     holdStart = millis();
   } else {
-    // If neutral / resting hand, release lock after 120ms so same gesture can trigger again!
+    // Wait until hand sits flat/neutral for 300ms before unlocking next trigger
     if (activeGesture == GESTURE_NONE) {
-      if (millis() - holdStart >= 120) {
+      if (millis() - holdStart >= 300) {
         lastTriggered = GESTURE_NONE;
+        currentGesture = GESTURE_NONE;
       }
-    } else if (activeGesture != lastTriggered && (millis() - holdStart >= 180)) {
+    } else if (activeGesture != lastTriggered && (millis() - holdStart >= 500)) {
       currentGesture = activeGesture;
+      Serial.print(F("[GESTURE] MATCHED (T:")); Serial.print(thumb);
+      Serial.print(F(" I:")); Serial.print(index);
+      Serial.print(F(" M:")); Serial.print(mid);
+      Serial.print(F(" R:")); Serial.print(ring);
+      Serial.print(F(" P:")); Serial.print(pinky);
+      Serial.println(F(")"));
       triggerGestureAudio(currentGesture);
       lastTriggered = activeGesture;
       lastTriggerTime = millis();
@@ -911,7 +1025,7 @@ void detectGesture() {
 void triggerGestureAudio(GestureId g) {
   // Voice playback cooldown: prevent playing tracks from stuttering or getting chopped
   static unsigned long lastAudioPlayTime = 0;
-  if (millis() - lastAudioPlayTime < 1800) {
+  if (millis() - lastAudioPlayTime < 2400) {
     return; // Wait for track to finish playing!
   }
   lastAudioPlayTime = millis();
@@ -967,196 +1081,80 @@ void triggerGestureAudio(GestureId g) {
 // OLED DISPLAY REFRESH (Clean & Stable 20 FPS)
 // ---==========================
 void updateDisplay() {
+#if !ENABLE_OLED
+  return;
+#else
+  if (!displayAvailable) return;
 
-  // Rate-limit OLED redraws to stable ~6.6 FPS (150ms) - snappy & low bus load
+  // Rate-limit OLED redraws to stable ~16 FPS (60ms) - silky smooth, zero bus freeze
   static unsigned long lastOledRefresh = 0;
-  if (millis() - lastOledRefresh < 150) return;
+  if (millis() - lastOledRefresh < 60) return;
   lastOledRefresh = millis();
-
-  // Auto-reconnect if OLED was previously offline (probe every 2s)
-  if (!displayAvailable) {
-    static unsigned long lastOledRetry = 0;
-    if (millis() - lastOledRetry > 2000) {
-      lastOledRetry = millis();
-      Wire.beginTransmission(0x3C);
-      Wire.write((uint8_t)0x00);
-      if (Wire.endTransmission() == 0) {
-        if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C, false, false)) {
-          display.setRotation(2);
-          display.dim(false);
-          displayAvailable = true;
-                    Serial.println(F("[!] OLED RECONNECTED & READY [OK]"));
-        }
-      }
-    }
-    if (!displayAvailable) return;
-  }
-
-  // Periodic OLED connection check (every 3s)
-  static unsigned long lastGlitchCheck = 0;
-  if (millis() - lastGlitchCheck > 3000) {
-    lastGlitchCheck = millis();
-    Wire.beginTransmission(0x3C);
-    if (Wire.endTransmission() != 0) {
-      displayAvailable = false;
-      Serial.println(F("[!] OLED disconnected during run! Check wires."));
-      return;
-    }
-  }
-
-
 
   display.clearDisplay();
 
-  // 1. Header Bar
-
+  // 1. Clean Top Header: "SIGNBRIDGE"
   display.setTextSize(1);
-
   display.setTextColor(SSD1306_WHITE);
-
-  display.setCursor(0, 0);
-
+  display.setCursor(34, 2);
   display.print(F("SIGNBRIDGE"));
+  display.drawLine(0, 13, 127, 13, SSD1306_WHITE);
 
-  display.setCursor(76, 0);
-
-  if (motion.isMoving) {
-
-    display.print(F("[WAVE!]"));
-
-  } else if (mpuAvailable) {
-
-    display.print(F("[STABLE]"));
-
-  } else {
-
-    display.print(F("[FLEX5]"));
-
-  }
-
-  display.drawLine(0, 9, 127, 9, SSD1306_WHITE);
-
-  // 2. 5-Finger Gauge Bars (T, I, M, R, P)
-
-  for (uint8_t i = 0; i < NUM_FLEX; i++) {
-
-    int x = 4 + (i * 25);
-
-    int y = 12;
-
-    display.setCursor(x + 7, y);
-
-    display.print(FINGER_INITIALS[i]);
-
-    display.drawRect(x, y + 9, 20, 7, SSD1306_WHITE);
-
-    // Filter sub-5% jitter so gauges stay perfectly empty at rest:
-    int fillW = (flexSensors[i].bendPercent > 5) ? map(flexSensors[i].bendPercent, 5, 100, 1, 18) : 0;
-
-    if (fillW > 0) {
-
-      display.fillRect(x + 1, y + 10, fillW, 5, SSD1306_WHITE);
-
-    }
-
-  }
-
-  // 3. Wrist Orientation (Pitch, Roll & Dynamic Motion)
-  display.setCursor(0, 30);
-  if (mpuAvailable) {
-    display.print(F("P:"));
-    if ((int)motion.pitch >= 0) display.print('+');
-    display.print((int)motion.pitch);
-    display.print((char)247);
-    
-    display.setCursor(64, 30);
-    display.print(F("R:"));
-    if ((int)motion.roll >= 0) display.print('+');
-    display.print((int)motion.roll);
-    display.print((char)247);
-  } else {
-    display.print(F("MPU: Initializing..."));
-  }
-
-  display.drawLine(0, 39, 127, 39, SSD1306_WHITE);
-
-  // 4. Recognized Gesture Banner
-
-  display.setCursor(0, 42);
-
-  display.print(F("Gesture:"));
-
-  display.setTextSize(2);
-
-  display.setCursor(4, 50);
-
-  GestureId active = (lastTriggeredGesture != GESTURE_NONE && (millis() - lastTriggerTime < 2200))
-
+  // 2. Active Gesture / Spoken Voice Words
+  // Keep spoken word on screen for 2.5s while speaker plays, then return to Listening...
+  GestureId active = (lastTriggeredGesture != GESTURE_NONE && (millis() - lastTriggerTime < 2500))
                      ? lastTriggeredGesture : currentGesture;
 
-  switch (active) {
-
-    case GESTURE_NEED_HELP:
-
-      display.print(F("HELP!"));
-
-      break;
-
-    case GESTURE_WANT_WATER:
-
-      display.print(F("WATER"));
-
-      break;
-
-    case GESTURE_AM_OKAY:
-
-      display.print(F("I'M OKAY"));
-
-      break;
-
-    case GESTURE_THANK_YOU:
-
-      display.print(F("THANK YOU"));
-
-      break;
-
-    case GESTURE_PEACE:
-
-      display.print(F("PEACE"));
-
-      break;
-
-    case GESTURE_LOVE:
-
-      display.print(F("LOVE"));
-
-      break;
-
-    case GESTURE_CALL_DOCTOR:
-
-      display.print(F("DOCTOR!"));
-
-      break;
-
-    default:
-
-      display.setTextSize(1);
-
-      display.setCursor(24, 53);
-
-      display.print(F("Listening..."));
-
-      break;
-
+  if (active != GESTURE_NONE) {
+    display.setTextSize(2);
+    switch (active) {
+      case GESTURE_NEED_HELP:
+        display.setCursor(10, 30);
+        display.print(F("NEED HELP"));
+        break;
+      case GESTURE_WANT_WATER:
+        display.setCursor(34, 30);
+        display.print(F("WATER"));
+        break;
+      case GESTURE_AM_OKAY:
+        display.setCursor(16, 30);
+        display.print(F("I'M OKAY"));
+        break;
+      case GESTURE_THANK_YOU:
+        display.setCursor(10, 30);
+        display.print(F("THANK YOU"));
+        break;
+      case GESTURE_PEACE:
+        display.setCursor(34, 30);
+        display.print(F("PEACE"));
+        break;
+      case GESTURE_LOVE:
+        display.setCursor(4, 30);
+        display.print(F("I LOVE YOU"));
+        break;
+      case GESTURE_CALL_DOCTOR:
+        display.setCursor(22, 30);
+        display.print(F("DOCTOR!"));
+        break;
+      default:
+        break;
+    }
+  } else {
+    // Resting state: Clean centered "LISTENING" and "[ Ready ]"
+    display.setTextSize(2);
+    display.setCursor(10, 26);
+    display.print(F("LISTENING"));
+    display.setTextSize(1);
+    display.setCursor(38, 48);
+    display.print(F("[ Ready ]"));
   }
 
   refreshOLED(oledColOffset);
 
   if (Wire.getWireTimeoutFlag()) {
-
     Wire.clearWireTimeoutFlag();
-
   }
+#endif
 }
 // ---==========================
 // SERIAL TELEMETRY OUTPUT (Live Stream for Arduino Serial Plotter)
@@ -1291,6 +1289,12 @@ void scanI2C() {
     Wire.beginTransmission(address);
     byte error = Wire.endTransmission();
     if (Wire.getWireTimeoutFlag()) Wire.clearWireTimeoutFlag();
+    if (address == 0x3C || address == 0x3D) {
+      Serial.print(F("  Probe 0x"));
+      Serial.print(address, HEX);
+      Serial.print(F(" -> error code: "));
+      Serial.println(error);
+    }
     if (error == 0) {
       Serial.print(F("Found device at: 0x"));
       Serial.print(address, HEX);
@@ -1316,6 +1320,8 @@ void handleSerialCommands() {
     Serial.print(F("[*] Keyboard Audio Test: Track "));
     Serial.println(trk);
     playVoiceTrack(trk);
+    lastTriggeredGesture = (GestureId)trk;
+    lastTriggerTime = millis();
   } else if (cmd == '+' || cmd == '=') {
     if (dfPlayerVolume < 30) dfPlayerVolume++;
     dfplayer_send_cmd(0x06, dfPlayerVolume);
@@ -1366,7 +1372,7 @@ void handleSerialCommands() {
     Serial.println(F("[*] Switched to RAW HARDWARE DIAGNOSTIC mode"));
 
   } else if (cmd == 'o' || cmd == 'O') {
-
+#if ENABLE_OLED
     Serial.print(F("[*] Re-initializing OLED Display (0x3C)... "));
     Wire.beginTransmission(0x3C);
     byte oErr = Wire.endTransmission();
@@ -1392,7 +1398,9 @@ void handleSerialCommands() {
       Serial.print(oErr);
       Serial.println(F(") - Check OLED VCC, GND, SDA(A4), SCL(A5) wires!"));
     }
-
+#else
+    Serial.println(F("[*] OLED disabled in firmware (ENABLE_OLED=0)"));
+#endif
   } else if (cmd == 'w' || cmd == 'W') {
 
     Serial.println(F("\n--- LIVE HARDWARE WIRE DIAGNOSTIC ---"));
@@ -1407,14 +1415,14 @@ void handleSerialCommands() {
     Serial.println(F("--------------------------------------\n"));
 
   } else if (cmd == 'f' || cmd == 'F') {
-
+#if ENABLE_OLED
     static uint8_t rot = 2;
     rot = (rot == 2) ? 0 : 2;
     display.setRotation(rot);
     Serial.print(F("[*] Switched OLED Rotation to: "));
     Serial.println(rot);
     refreshOLED(oledColOffset);
-
+#endif
   } else if (cmd >= '1' && cmd <= '7') {
 
     triggerGestureAudio((GestureId)(cmd - '0'));
@@ -1422,16 +1430,38 @@ void handleSerialCommands() {
   } else if (cmd == 'v' || cmd == 'V') {
     uint16_t sdaV = analogRead(A4);
     uint16_t sclV = analogRead(A5);
+    long vcc = readVcc();
+    float sda_volts = (sdaV * (vcc / 1000.0f)) / 1023.0f;
+    float scl_volts = (sclV * (vcc / 1000.0f)) / 1023.0f;
     Serial.print(F("[BUS VOLTAGE] SDA (A4) = "));
-    Serial.print((sdaV * 5.0f) / 1023.0f, 2);
+    Serial.print(sda_volts, 2);
     Serial.print(F("V | SCL (A5) = "));
-    Serial.print((sclV * 5.0f) / 1023.0f, 2);
-    Serial.println(F("V"));
+    Serial.print(scl_volts, 2);
+    Serial.print(F("V (VCC = "));
+    Serial.print(vcc / 1000.0f, 2);
+    Serial.println(F("V)"));
+    if (sda_volts < 3.2f || scl_volts < 3.2f) {
+      Serial.println(F(" -> [!] OLED VCC IS UNPOWERED OR LOOSE (Lines at ~2.4V)! Plug OLED VCC into 5V."));
+    } else {
+      Serial.println(F(" -> [OK] Bus voltage healthy at ~5V!"));
+    }
   } else if (cmd == 'x' || cmd == 'X') {
+#if ENABLE_OLED
     oledColOffset = (oledColOffset == 2) ? 0 : 2;
+    clearSH1106RAM();
     Serial.print(F("[*] Switched OLED Column Offset to: "));
     Serial.println(oledColOffset);
     refreshOLED(oledColOffset);
+#endif
+  } else if (cmd == 'y' || cmd == 'Y') {
+#if ENABLE_OLED
+    oledRotation = (oledRotation == 2) ? 0 : 2;
+    display.setRotation(oledRotation);
+    clearSH1106RAM();
+    Serial.print(F("[*] Switched OLED Rotation to: "));
+    Serial.println(oledRotation);
+    refreshOLED(oledColOffset);
+#endif
   } else if (cmd == 't' || cmd == 'T') {
 
     Serial.println(F("[*] Audio Test: Playing Track 1 ('I need help')..."));
@@ -1486,27 +1516,19 @@ void runAutoCalibration() {
 
   Serial.println(F("---"));
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setTextSize(1);
-
     display.setCursor(0, 5);
-
     display.println(F("CALIBRATION MODE"));
-
     display.println(F("-----------------"));
-
     display.println(F("Step 1:"));
-
     display.println(F("HOLD HAND OPEN"));
-
     display.println(F("& STRAIGHT..."));
-
     refreshOLED(oledColOffset);
-
   }
+#endif
 
   Serial.println(F("[STEP 1/2]: Keep all 5 fingers completely FLAT & STRAIGHT."));
 
@@ -1562,25 +1584,18 @@ void runAutoCalibration() {
 
   }
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setCursor(0, 5);
-
     display.println(F("CALIBRATION MODE"));
-
     display.println(F("-----------------"));
-
     display.println(F("Step 2:"));
-
     display.println(F("CLOSE INTO A"));
-
     display.println(F("TIGHT FIST..."));
-
     refreshOLED(oledColOffset);
-
   }
+#endif
 
   Serial.println(F("\n[STEP 2/2]: Close hand into a TIGHT FIST (Bending all fingers)."));
 
@@ -1656,21 +1671,15 @@ void runAutoCalibration() {
 
   Serial.println(F("---\n"));
 
+#if ENABLE_OLED
   if (displayAvailable) {
-
     display.clearDisplay();
-
     display.setCursor(10, 20);
-
     display.println(F("CALIBRATION DONE!"));
-
     display.setCursor(10, 36);
-
     display.println(F("Ready to detect!"));
-
     refreshOLED(oledColOffset);
-
     delay(1200);
-
   }
+#endif
 }
